@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playwright Locator Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon">🎭</div>
+      <h1>Playwright Locator Pro</h1>
+      <div class="version">v4.0.0</div>
+    </div>
+
+    <div class="modes">
+      <button id="btn-generate" class="mode-btn generate">
+        <div class="mode-icon">🎯</div>
+        <div class="mode-title">GENERATE</div>
+        <div class="mode-desc">Click elements to get locators</div>
+      </button>
+
+      <button id="btn-validate" class="mode-btn validate">
+        <div class="mode-icon">✓</div>
+        <div class="mode-title">VALIDATE</div>
+        <div class="mode-desc">Test your locators live</div>
+      </button>
+    </div>
+
+    <div class="settings-bar">
+      <label for="language-select">Language:</label>
+      <select id="language-select">
+        <option value="java">Java</option>
+        <option value="python">Python</option>
+        <option value="javascript">JavaScript</option>
+        <option value="typescript">TypeScript</option>
+        <option value="csharp">C#</option>
+      </select>
+    </div>
+
+    <div class="actions">
+      <button id="btn-history" class="action-btn">
+        📚 History
+      </button>
+      <button id="btn-favorites" class="action-btn">
+        ⭐ Favorites
+      </button>
+      <button id="btn-settings" class="action-btn">
+        ⚙️ Settings
+      </button>
+    </div>
+
+    <div class="footer">
+      <button id="btn-help" class="help-btn">❓ Help</button>
+      <button id="btn-stop" class="stop-btn">⏹️ Stop</button>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

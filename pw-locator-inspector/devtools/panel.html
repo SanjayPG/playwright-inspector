@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playwright Locator Pro</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <!-- Main Container -->
+  <div class="devtools-container">
+
+    <!-- Header Section -->
+    <div class="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">🎭</span>
+          <span class="logo-text">Playwright Locator Pro</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <select id="language-selector" class="language-select">
+          <option value="java">Java</option>
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+          <option value="typescript">TypeScript</option>
+          <option value="csharp">C#</option>
+        </select>
+        <button id="settings-btn" class="icon-btn" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6m0 6v6m-6-6h6m6 0h-6"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mode Toggle -->
+    <div class="mode-toggle">
+      <button id="mode-generate" class="mode-btn active" data-mode="generate">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3l18 18M9 9l12 12"></path>
+        </svg>
+        <span>Generate Locators</span>
+      </button>
+      <button id="mode-validate" class="mode-btn" data-mode="validate">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Validate Locators</span>
+      </button>
+      <button id="mode-history" class="mode-btn" data-mode="history">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span>History</span>
+      </button>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="content-area">
+
+      <!-- Generate Mode -->
+      <div id="generate-panel" class="panel-content active">
+        <div class="inspector-controls">
+          <button id="start-inspector" class="primary-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            Start Element Picker
+          </button>
+          <div class="inspector-status" id="inspector-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Ready</span>
+          </div>
+        </div>
+
+        <!-- Element Info Card -->
+        <div id="element-card" class="element-card" style="display: none;">
+          <div class="card-header">
+            <h3>Selected Element</h3>
+            <button id="clear-element" class="icon-btn-small">×</button>
+          </div>
+          <div class="element-info">
+            <div class="info-row">
+              <span class="info-label">Tag:</span>
+              <span id="element-tag" class="info-value">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Classes:</span>
+              <span id="element-classes" class="info-value">-</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">ID:</span>
+              <span id="element-id" class="info-value">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Locators List -->
+        <div id="locators-container" class="locators-container">
+          <div class="empty-state">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <h3>Click "Start Element Picker"</h3>
+            <p>Then click any element on the page to generate Playwright locators</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Validate Mode -->
+      <div id="validate-panel" class="panel-content">
+        <div class="validate-section">
+          <h3 class="section-title">Test Your Playwright Locator</h3>
+          <textarea
+            id="validate-input"
+            class="code-input"
+            placeholder="Paste your Playwright locator here...
+
+Examples:
+page.getByLabel('Username')
+page.getByRole('button', { name: 'Login' })
+page.get_by_placeholder('Email')
+page.locator('#submit-btn')"
+            rows="8"></textarea>
+
+          <button id="validate-btn" class="primary-btn validate-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Validate & Highlight
+          </button>
+
+          <div id="validate-results" class="validate-results"></div>
+        </div>
+      </div>
+
+      <!-- History Mode -->
+      <div id="history-panel" class="panel-content">
+        <div class="history-section">
+          <div class="section-header">
+            <h3 class="section-title">Recent Locators</h3>
+            <button id="clear-history" class="text-btn">Clear All</button>
+          </div>
+          <div id="history-list" class="history-list">
+            <div class="empty-state">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <h3>No History Yet</h3>
+              <p>Generate some locators to see them here</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-left">
+        <span class="version">v4.2.0</span>
+      </div>
+      <div class="footer-right">
+        <span class="status-indicator">●</span>
+        <span>Connected</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="panel.js"></script>
+</body>
+</html>

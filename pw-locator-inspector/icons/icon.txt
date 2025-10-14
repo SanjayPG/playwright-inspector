@@ -1,0 +1,21 @@
+To generate the required PNG icon files:
+
+METHOD 1 - Using the HTML Generator (Recommended):
+1. Open generate-icons.html in your web browser
+2. Icons will auto-generate
+3. Click "Download" for each size (16x16, 48x48, 128x128)
+4. Save them as icon16.png, icon48.png, icon128.png in this icons/ folder
+
+METHOD 2 - Using any image editor:
+Create 3 PNG files with these specifications:
+- icon16.png (16x16 pixels)
+- icon48.png (48x48 pixels)
+- icon128.png (128x128 pixels)
+
+Design: Purple gradient background with 🎭 theater masks emoji
+
+METHOD 3 - Quick placeholder (temporary):
+Use any solid color square PNG images with the correct sizes.
+The extension will work, just without nice icons.
+
+Once you have the PNG files, the extension will be ready to load in Chrome!

@@ -1,0 +1,128 @@
+/**
+ * Injected CSS Styles for PW Locator Inspector
+ * These styles are injected into the page for UI elements
+ */
+
+/* Animations */
+@keyframes pwlpSlideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pwlpSlideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+}
+
+@keyframes pwlpFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pwlpPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Badge styles */
+.pwlp-badge {
+  animation: pwlpFadeIn 0.2s ease-out;
+  transition: all 0.2s ease;
+}
+
+.pwlp-badge:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Panel scrollbar styling */
+[id^="pwlp-"]::-webkit-scrollbar {
+  width: 8px;
+}
+
+[id^="pwlp-"]::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+[id^="pwlp-"]::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+[id^="pwlp-"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Button hover effects */
+[id^="pwlp-"] button {
+  transition: all 0.2s ease;
+}
+
+[id^="pwlp-"] button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+[id^="pwlp-"] button:active {
+  transform: translateY(0);
+}
+
+/* Input focus styles */
+[id^="pwlp-"] input,
+[id^="pwlp-"] textarea,
+[id^="pwlp-"] select {
+  transition: all 0.2s ease;
+}
+
+[id^="pwlp-"] input:focus,
+[id^="pwlp-"] textarea:focus,
+[id^="pwlp-"] select:focus {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+/* Ensure extension UI is above everything */
+[id^="pwlp-"] {
+  position: fixed;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Prevent text selection in UI elements */
+[id^="pwlp-"] {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+/* Allow text selection in code blocks */
+[id^="pwlp-"] pre,
+[id^="pwlp-"] code,
+[id^="pwlp-"] textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+}

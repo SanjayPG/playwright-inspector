@@ -1,0 +1,1010 @@
+/**
+ * ============================================
+ * PLAYWRIGHT LOCATOR FINDER - PROFESSIONAL EDITION
+ * Multi-Language Support: Java | Python | JavaScript | C#
+ * ============================================
+ * 
+ * INSTALLATION:
+ * 1. Copy this entire script
+ * 2. Paste into Chrome DevTools Console
+ * 3. Press Enter
+ * 4. Set your language binding
+ * 5. Use native Playwright syntax!
+ * 
+ * Author: Playwright Testing Tool
+ * Version: 2.0
+ */
+
+(function() {
+  'use strict';
+
+  // Prevent duplicate initialization
+  if (window.__PLAYWRIGHT_LOCATOR_FINDER__) {
+    console.log('%c⚠️  Playwright Locator Finder already loaded!', 'color: orange; font-weight: bold;');
+    console.log('%cType: help() to see available commands', 'color: gray;');
+    return;
+  }
+  window.__PLAYWRIGHT_LOCATOR_FINDER__ = { version: '2.0', loaded: true };
+
+  // ============================================
+  // CORE ENGINE - LANGUAGE AGNOSTIC
+  // ============================================
+
+  const Engine = {
+    currentLanguage: null,
+    
+    // Element highlighting
+    clearHighlights() {
+      document.querySelectorAll('[data-pwlf-highlight]').forEach(el => {
+        el.style.outline = '';
+        el.style.removeProperty('outline');
+        el.removeAttribute('data-pwlf-highlight');
+      });
+      document.querySelectorAll('[data-pwlf-label]').forEach(label => {
+        label.remove();
+      });
+    },
+
+    highlightElements(elements, color) {
+      this.clearHighlights();
+      
+      elements.forEach((el, index) => {
+        try {
+          el.style.outline = `3px solid ${color}`;
+          el.setAttribute('data-pwlf-highlight', 'true');
+          
+          // Create position label
+          const label = document.createElement('div');
+          label.setAttribute('data-pwlf-label', 'true');
+          label.textContent = `[${index}]`;
+          label.style.cssText = `
+            position: fixed;
+            background: ${color};
+            color: #000;
+            padding: 3px 7px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: monospace;
+            z-index: 2147483647;
+            pointer-events: none;
+            border-radius: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          `;
+          
+          const rect = el.getBoundingClientRect();
+          label.style.top = `${rect.top - 22}px`;
+          label.style.left = `${rect.left}px`;
+          
+          document.body.appendChild(label);
+          
+          // Auto-remove after 10 seconds
+          setTimeout(() => {
+            if (label.parentNode) label.remove();
+          }, 10000);
+        } catch (e) {
+          console.warn('Could not highlight element:', e);
+        }
+      });
+    },
+
+    // Console output
+    logResults(syntaxUsed, elements) {
+      const hasResults = elements && elements.length > 0;
+      
+      console.group(`🎯 ${syntaxUsed}`);
+      console.log(`${hasResults ? '✅' : '❌'} Found: ${elements.length} element(s)`);
+      
+      if (hasResults) {
+        const tableData = elements.map((el, idx) => {
+          return {
+            Index: idx,
+            Tag: el.tagName,
+            Text: (el.textContent || '').substring(0, 50).trim(),
+            Role: el.getAttribute('role') || this.getImplicitRole(el) || '-',
+            ID: el.id || '-',
+            Classes: el.className ? el.className.substring(0, 30) : '-',
+            TestID: el.getAttribute('data-testid') || '-'
+          };
+        });
+        
+        console.table(tableData);
+        console.log('DOM Elements:', elements);
+      } else {
+        console.warn('💡 Tip: Check if the element exists on the page, or try different text/role values');
+      }
+      
+      console.groupEnd();
+      return elements;
+    },
+
+    // Get implicit ARIA role
+    getImplicitRole(element) {
+      const tag = element.tagName.toLowerCase();
+      const type = (element.getAttribute('type') || '').toLowerCase();
+      
+      const roleMap = {
+        'a': element.href ? 'link' : null,
+        'button': 'button',
+        'input': {
+          'button': 'button',
+          'checkbox': 'checkbox',
+          'radio': 'radio',
+          'text': 'textbox',
+          'email': 'textbox',
+          'password': 'textbox',
+          'search': 'searchbox',
+          'tel': 'textbox',
+          'url': 'textbox',
+          'number': 'spinbutton',
+          'range': 'slider',
+          'default': 'textbox'
+        }[type] || 'textbox',
+        'textarea': 'textbox',
+        'select': 'combobox',
+        'h1': 'heading', 'h2': 'heading', 'h3': 'heading',
+        'h4': 'heading', 'h5': 'heading', 'h6': 'heading',
+        'img': 'img',
+        'ul': 'list',
+        'ol': 'list',
+        'li': 'listitem',
+        'nav': 'navigation',
+        'main': 'main',
+        'header': 'banner',
+        'footer': 'contentinfo',
+        'aside': 'complementary',
+        'article': 'article',
+        'section': 'region',
+        'form': 'form',
+        'table': 'table',
+        'tr': 'row',
+        'td': 'cell',
+        'th': 'columnheader',
+        'dialog': 'dialog',
+        'hr': 'separator'
+      };
+      
+      return roleMap[tag] || null;
+    },
+
+    // Calculate accessible name (W3C compliant)
+    getAccessibleName(element) {
+      // Priority 1: aria-labelledby
+      if (element.hasAttribute('aria-labelledby')) {
+        const ids = element.getAttribute('aria-labelledby').split(' ');
+        const texts = ids.map(id => {
+          const el = document.getElementById(id);
+          return el ? el.textContent.trim() : '';
+        }).filter(t => t);
+        if (texts.length > 0) return texts.join(' ');
+      }
+      
+      // Priority 2: aria-label
+      if (element.hasAttribute('aria-label')) {
+        return element.getAttribute('aria-label').trim();
+      }
+      
+      // Priority 3: associated <label> element
+      if (element.id) {
+        const label = document.querySelector(`label[for="${element.id}"]`);
+        if (label) return label.textContent.trim();
+      }
+      
+      // Priority 4: wrapped in <label>
+      const parentLabel = element.closest('label');
+      if (parentLabel) {
+        // Clone and remove the input to get only label text
+        const clone = parentLabel.cloneNode(true);
+        const input = clone.querySelector('input, select, textarea');
+        if (input) input.remove();
+        return clone.textContent.trim();
+      }
+      
+      // Priority 5: title attribute
+      if (element.hasAttribute('title')) {
+        return element.getAttribute('title').trim();
+      }
+      
+      // Priority 6: alt attribute (for images)
+      if (element.hasAttribute('alt')) {
+        return element.getAttribute('alt').trim();
+      }
+      
+      // Priority 7: placeholder (not recommended but supported)
+      if (element.hasAttribute('placeholder')) {
+        return element.getAttribute('placeholder').trim();
+      }
+      
+      // Priority 8: text content (for buttons, links, headings)
+      if (['BUTTON', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
+        return element.textContent.trim();
+      }
+      
+      // Priority 9: value attribute (for inputs with value)
+      if (element.tagName === 'INPUT' && element.value) {
+        return element.value.trim();
+      }
+      
+      return '';
+    },
+
+    // Text matching utility (normalizes whitespace like Playwright)
+    normalizeText(text) {
+      return text.replace(/\s+/g, ' ').trim();
+    },
+
+    matchText(elementText, searchText, exact, isRegex) {
+      elementText = this.normalizeText(elementText);
+      
+      if (isRegex) {
+        return searchText.test(elementText);
+      }
+      
+      if (exact) {
+        return elementText === this.normalizeText(searchText);
+      }
+      
+      return elementText.toLowerCase().includes(this.normalizeText(searchText).toLowerCase());
+    },
+
+    // ============================================
+    // CORE LOCATOR IMPLEMENTATIONS
+    // ============================================
+
+    findByRole(role, options = {}) {
+      const { name, exact = false, level } = options;
+      let elements = [];
+      
+      // Find elements with explicit role
+      const explicitRoles = Array.from(document.querySelectorAll(`[role="${role}"]`));
+      elements.push(...explicitRoles);
+      
+      // Find elements with implicit role
+      document.querySelectorAll('*').forEach(el => {
+        const implicitRole = this.getImplicitRole(el);
+        if (implicitRole === role && !elements.includes(el)) {
+          // Filter by heading level if specified
+          if (role === 'heading' && level) {
+            const tagLevel = parseInt(el.tagName.substring(1)); // h1 -> 1
+            if (tagLevel === level) {
+              elements.push(el);
+            }
+          } else {
+            elements.push(el);
+          }
+        }
+      });
+      
+      // Filter by accessible name if provided
+      if (name !== undefined && name !== null) {
+        const isRegex = name instanceof RegExp;
+        elements = elements.filter(el => {
+          const accessibleName = this.getAccessibleName(el);
+          return this.matchText(accessibleName, name, exact, isRegex);
+        });
+      }
+      
+      return elements;
+    },
+
+    findByText(text, options = {}) {
+      const { exact = false } = options;
+      const isRegex = text instanceof RegExp;
+      const elements = [];
+      
+      // Use TreeWalker for better performance
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: function(node) {
+            // Skip script and style elements
+            if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE') {
+              return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        }
+      );
+      
+      while (walker.nextNode()) {
+        const el = walker.currentNode;
+        // Check if element has direct text content (not just from children)
+        const hasDirectText = Array.from(el.childNodes).some(
+          node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+        );
+        
+        if (hasDirectText) {
+          const text = el.textContent;
+          if (text && this.matchText(text, text, exact, isRegex)) {
+            elements.push(el);
+          }
+        }
+      }
+      
+      return elements;
+    },
+
+    findByLabel(text, options = {}) {
+      const { exact = false } = options;
+      const isRegex = text instanceof RegExp;
+      const elements = [];
+      
+      // Method 1: Find via <label> elements
+      document.querySelectorAll('label').forEach(label => {
+        if (this.matchText(label.textContent, text, exact, isRegex)) {
+          // Try to find associated input via 'for' attribute
+          if (label.hasAttribute('for')) {
+            const input = document.getElementById(label.getAttribute('for'));
+            if (input && !elements.includes(input)) {
+              elements.push(input);
+            }
+          }
+          
+          // Try to find nested input
+          const nestedInput = label.querySelector('input, select, textarea, button');
+          if (nestedInput && !elements.includes(nestedInput)) {
+            elements.push(nestedInput);
+          }
+        }
+      });
+      
+      // Method 2: Find via aria-label and aria-labelledby
+      document.querySelectorAll('input, select, textarea, button').forEach(input => {
+        const accessibleName = this.getAccessibleName(input);
+        if (accessibleName && this.matchText(accessibleName, text, exact, isRegex) && !elements.includes(input)) {
+          elements.push(input);
+        }
+      });
+      
+      return elements;
+    },
+
+    findByPlaceholder(text, options = {}) {
+      const { exact = false } = options;
+      const isRegex = text instanceof RegExp;
+      
+      return Array.from(document.querySelectorAll('[placeholder]')).filter(el => {
+        return this.matchText(el.getAttribute('placeholder') || '', text, exact, isRegex);
+      });
+    },
+
+    findByAltText(text, options = {}) {
+      const { exact = false } = options;
+      const isRegex = text instanceof RegExp;
+      
+      return Array.from(document.querySelectorAll('[alt]')).filter(el => {
+        return this.matchText(el.getAttribute('alt') || '', text, exact, isRegex);
+      });
+    },
+
+    findByTitle(text, options = {}) {
+      const { exact = false } = options;
+      const isRegex = text instanceof RegExp;
+      
+      return Array.from(document.querySelectorAll('[title]')).filter(el => {
+        return this.matchText(el.getAttribute('title') || '', text, exact, isRegex);
+      });
+    },
+
+    findByTestId(testId, attribute = 'data-testid') {
+      return Array.from(document.querySelectorAll(`[${attribute}="${testId}"]`));
+    },
+
+    findByLocator(selector) {
+      try {
+        // Check if XPath
+        if (selector.startsWith('//') || selector.startsWith('(//') || selector.startsWith('xpath=')) {
+          const xpath = selector.replace(/^xpath=/, '');
+          const result = document.evaluate(
+            xpath,
+            document,
+            null,
+            XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+            null
+          );
+          const elements = [];
+          for (let i = 0; i < result.snapshotLength; i++) {
+            elements.push(result.snapshotItem(i));
+          }
+          return elements;
+        }
+        
+        // CSS selector
+        const cssSelector = selector.replace(/^css=/, '');
+        return Array.from(document.querySelectorAll(cssSelector));
+      } catch (error) {
+        console.error('Invalid selector:', error.message);
+        return [];
+      }
+    }
+  };
+
+  // ============================================
+  // JAVA LANGUAGE BINDING
+  // ============================================
+
+  window.AriaRole = {
+    ALERT: 'alert',
+    ALERTDIALOG: 'alertdialog',
+    APPLICATION: 'application',
+    ARTICLE: 'article',
+    BANNER: 'banner',
+    BLOCKQUOTE: 'blockquote',
+    BUTTON: 'button',
+    CAPTION: 'caption',
+    CELL: 'cell',
+    CHECKBOX: 'checkbox',
+    CODE: 'code',
+    COLUMNHEADER: 'columnheader',
+    COMBOBOX: 'combobox',
+    COMPLEMENTARY: 'complementary',
+    CONTENTINFO: 'contentinfo',
+    DEFINITION: 'definition',
+    DELETION: 'deletion',
+    DIALOG: 'dialog',
+    DIRECTORY: 'directory',
+    DOCUMENT: 'document',
+    EMPHASIS: 'emphasis',
+    FEED: 'feed',
+    FIGURE: 'figure',
+    FORM: 'form',
+    GENERIC: 'generic',
+    GRID: 'grid',
+    GRIDCELL: 'gridcell',
+    GROUP: 'group',
+    HEADING: 'heading',
+    IMG: 'img',
+    INSERTION: 'insertion',
+    LINK: 'link',
+    LIST: 'list',
+    LISTBOX: 'listbox',
+    LISTITEM: 'listitem',
+    LOG: 'log',
+    MAIN: 'main',
+    MARQUEE: 'marquee',
+    MATH: 'math',
+    METER: 'meter',
+    MENU: 'menu',
+    MENUBAR: 'menubar',
+    MENUITEM: 'menuitem',
+    MENUITEMCHECKBOX: 'menuitemcheckbox',
+    MENUITEMRADIO: 'menuitemradio',
+    NAVIGATION: 'navigation',
+    NONE: 'none',
+    NOTE: 'note',
+    OPTION: 'option',
+    PARAGRAPH: 'paragraph',
+    PRESENTATION: 'presentation',
+    PROGRESSBAR: 'progressbar',
+    RADIO: 'radio',
+    RADIOGROUP: 'radiogroup',
+    REGION: 'region',
+    ROW: 'row',
+    ROWGROUP: 'rowgroup',
+    ROWHEADER: 'rowheader',
+    SCROLLBAR: 'scrollbar',
+    SEARCH: 'search',
+    SEARCHBOX: 'searchbox',
+    SEPARATOR: 'separator',
+    SLIDER: 'slider',
+    SPINBUTTON: 'spinbutton',
+    STATUS: 'status',
+    STRONG: 'strong',
+    SUBSCRIPT: 'subscript',
+    SUPERSCRIPT: 'superscript',
+    SWITCH: 'switch',
+    TAB: 'tab',
+    TABLE: 'table',
+    TABLIST: 'tablist',
+    TABPANEL: 'tabpanel',
+    TERM: 'term',
+    TEXTBOX: 'textbox',
+    TIME: 'time',
+    TIMER: 'timer',
+    TOOLBAR: 'toolbar',
+    TOOLTIP: 'tooltip',
+    TREE: 'tree',
+    TREEGRID: 'treegrid',
+    TREEITEM: 'treeitem'
+  };
+
+  // Java Page class with options builders
+  window.Page = class {
+    static GetByRoleOptions = class {
+      constructor() {
+        this._name = undefined;
+        this._exact = undefined;
+        this._level = undefined;
+      }
+      
+      setName(name) {
+        this._name = name;
+        return this;
+      }
+      
+      setExact(exact) {
+        this._exact = exact;
+        return this;
+      }
+      
+      setLevel(level) {
+        this._level = level;
+        return this;
+      }
+    };
+    
+    static GetByTextOptions = class {
+      constructor() {
+        this._exact = undefined;
+      }
+      
+      setExact(exact) {
+        this._exact = exact;
+        return this;
+      }
+    };
+    
+    static GetByLabelOptions = class {
+      constructor() {
+        this._exact = undefined;
+      }
+      
+      setExact(exact) {
+        this._exact = exact;
+        return this;
+      }
+    };
+    
+    static LocatorOptions = class {
+      constructor() {
+        this._hasText = undefined;
+        this._has = undefined;
+      }
+      
+      setHasText(text) {
+        this._hasText = text;
+        return this;
+      }
+      
+      setHas(locator) {
+        this._has = locator;
+        return this;
+      }
+    };
+  };
+
+  // Pattern class for regex support
+  window.Pattern = class {
+    static compile(regex, flags) {
+      if (typeof regex === 'string') {
+        const flagStr = flags === Pattern.CASE_INSENSITIVE ? 'i' : '';
+        return new RegExp(regex, flagStr);
+      }
+      return regex;
+    }
+    
+    static get CASE_INSENSITIVE() {
+      return 2;
+    }
+  };
+
+  // Java-style page methods
+  window.page = {
+    getByRole(role, options) {
+      let opts = {};
+      let syntax = `page.getByRole(AriaRole.${role.toUpperCase()}`;
+      
+      if (options) {
+        if (options._name !== undefined) {
+          opts.name = options._name;
+          const nameStr = options._name instanceof RegExp ? 
+            `Pattern.compile("${options._name.source}", Pattern.CASE_INSENSITIVE)` :
+            `"${options._name}"`;
+          syntax += `, new Page.GetByRoleOptions().setName(${nameStr})`;
+        }
+        if (options._exact !== undefined) {
+          opts.exact = options._exact;
+        }
+        if (options._level !== undefined) {
+          opts.level = options._level;
+        }
+      }
+      syntax += ')';
+      
+      const elements = Engine.findByRole(role, opts);
+      Engine.highlightElements(elements, '#00FF00');
+      return Engine.logResults(syntax, elements);
+    },
+    
+    getByText(text, options) {
+      let opts = {};
+      let syntax = `page.getByText("${text}"`;
+      
+      if (options && options._exact !== undefined) {
+        opts.exact = options._exact;
+        syntax += ', new Page.GetByTextOptions().setExact(true)';
+      }
+      syntax += ')';
+      
+      const elements = Engine.findByText(text, opts);
+      Engine.highlightElements(elements, '#00BFFF');
+      return Engine.logResults(syntax, elements);
+    },
+    
+    getByLabel(text, options) {
+      let opts = {};
+      let syntax = `page.getByLabel("${text}")`;
+      
+      if (options && options._exact !== undefined) {
+        opts.exact = options._exact;
+      }
+      
+      const elements = Engine.findByLabel(text, opts);
+      Engine.highlightElements(elements, '#FFA500');
+      return Engine.logResults(syntax, elements);
+    },
+    
+    getByPlaceholder(text, options) {
+      const opts = options || {};
+      const elements = Engine.findByPlaceholder(text, opts);
+      Engine.highlightElements(elements, '#00CED1');
+      return Engine.logResults(`page.getByPlaceholder("${text}")`, elements);
+    },
+    
+    getByAltText(text, options) {
+      const opts = options || {};
+      const elements = Engine.findByAltText(text, opts);
+      Engine.highlightElements(elements, '#9370DB');
+      return Engine.logResults(`page.getByAltText("${text}")`, elements);
+    },
+    
+    getByTitle(text, options) {
+      const opts = options || {};
+      const elements = Engine.findByTitle(text, opts);
+      Engine.highlightElements(elements, '#FF69B4');
+      return Engine.logResults(`page.getByTitle("${text}")`, elements);
+    },
+    
+    getByTestId(testId) {
+      const elements = Engine.findByTestId(testId);
+      Engine.highlightElements(elements, '#FFD700');
+      return Engine.logResults(`page.getByTestId("${testId}")`, elements);
+    },
+    
+    locator(selector, options) {
+      const elements = Engine.findByLocator(selector);
+      Engine.highlightElements(elements, '#FF4500');
+      return Engine.logResults(`page.locator("${selector}")`, elements);
+    }
+  };
+
+  // ============================================
+  // PYTHON LANGUAGE BINDING
+  // ============================================
+
+  window.python = {
+    page: {
+      get_by_role(role, name, exact, level) {
+        const opts = { name, exact: exact || false, level };
+        let syntax = `page.get_by_role("${role}"`;
+        if (name) syntax += `, name="${name}"`;
+        if (exact) syntax += ', exact=True';
+        if (level) syntax += `, level=${level}`;
+        syntax += ')';
+        
+        const elements = Engine.findByRole(role, opts);
+        Engine.highlightElements(elements, '#00FF00');
+        return Engine.logResults(syntax, elements);
+      },
+      
+      get_by_text(text, exact) {
+        const opts = { exact: exact || false };
+        let syntax = `page.get_by_text("${text}"`;
+        if (exact) syntax += ', exact=True';
+        syntax += ')';
+        
+        const elements = Engine.findByText(text, opts);
+        Engine.highlightElements(elements, '#00BFFF');
+        return Engine.logResults(syntax, elements);
+      },
+      
+      get_by_label(text, exact) {
+        const opts = { exact: exact || false };
+        const elements = Engine.findByLabel(text, opts);
+        Engine.highlightElements(elements, '#FFA500');
+        return Engine.logResults(`page.get_by_label("${text}")`, elements);
+      },
+      
+      get_by_placeholder(text, exact) {
+        const opts = { exact: exact || false };
+        const elements = Engine.findByPlaceholder(text, opts);
+        Engine.highlightElements(elements, '#00CED1');
+        return Engine.logResults(`page.get_by_placeholder("${text}")`, elements);
+      },
+      
+      get_by_alt_text(text, exact) {
+        const opts = { exact: exact || false };
+        const elements = Engine.findByAltText(text, opts);
+        Engine.highlightElements(elements, '#9370DB');
+        return Engine.logResults(`page.get_by_alt_text("${text}")`, elements);
+      },
+      
+      get_by_title(text, exact) {
+        const opts = { exact: exact || false };
+        const elements = Engine.findByTitle(text, opts);
+        Engine.highlightElements(elements, '#FF69B4');
+        return Engine.logResults(`page.get_by_title("${text}")`, elements);
+      },
+      
+      get_by_test_id(testId) {
+        const elements = Engine.findByTestId(testId);
+        Engine.highlightElements(elements, '#FFD700');
+        return Engine.logResults(`page.get_by_test_id("${testId}")`, elements);
+      },
+      
+      locator(selector) {
+        const elements = Engine.findByLocator(selector);
+        Engine.highlightElements(elements, '#FF4500');
+        return Engine.logResults(`page.locator("${selector}")`, elements);
+      }
+    }
+  };
+
+  // ============================================
+  // UTILITY FUNCTIONS
+  // ============================================
+
+  window.showAllRoles = function() {
+    const roleMap = new Map();
+    
+    document.querySelectorAll('*').forEach(el => {
+      const explicitRole = el.getAttribute('role');
+      const implicitRole = Engine.getImplicitRole(el);
+      const role = explicitRole || implicitRole;
+      
+      if (role) {
+        if (!roleMap.has(role)) {
+          roleMap.set(role, { count: 0, elements: [] });
+        }
+        const data = roleMap.get(role);
+        data.count++;
+        if (data.elements.length < 3) { // Store only first 3 for example
+          data.elements.push(el);
+        }
+      }
+    });
+    
+    const tableData = Array.from(roleMap.entries())
+      .map(([role, data]) => ({
+        Role: role,
+        Count: data.count,
+        Example: data.elements[0] ? 
+          `${data.elements[0].tagName}: ${(data.elements[0].textContent || '').substring(0, 40)}` :
+          ''
+      }))
+      .sort((a, b) => b.Count - a.Count);
+    
+    console.table(tableData);
+    return roleMap;
+  };
+
+  window.showAccessibleName = function(selector) {
+    const el = typeof selector === 'string' ? 
+      document.querySelector(selector) : 
+      selector;
+    
+    if (!el) {
+      console.error('❌ Element not found');
+      return null;
+    }
+    
+    const name = Engine.getAccessibleName(el);
+    const role = el.getAttribute('role') || Engine.getImplicitRole(el);
+    
+    console.group('🏷️  Accessible Name Information');
+    console.log('Element:', el);
+    console.log('Accessible Name:', name || '(empty)');
+    console.log('Role:', role || '(none)');
+    console.log('Tag:', el.tagName);
+    console.groupEnd();
+    
+    return name;
+  };
+
+  window.clearHighlights = function() {
+    Engine.clearHighlights();
+    console.log('✨ All highlights cleared');
+  };
+
+  window.setLanguage = function(lang) {
+    const langMap = {
+      'java': 'java',
+      'python': 'python',
+      'py': 'python',
+      'javascript': 'javascript',
+      'js': 'javascript',
+      'typescript': 'typescript',
+      'ts': 'typescript',
+      'csharp': 'csharp',
+      'cs': 'csharp',
+      'c#': 'csharp'
+    };
+    
+    const normalized = (lang || '').toLowerCase();
+    const finalLang = langMap[normalized];
+    
+    if (!finalLang) {
+      console.error('❌ Unsupported language. Use: java, python, javascript, or csharp');
+      return false;
+    }
+    
+    Engine.currentLanguage = finalLang;
+    console.log(`%c✅ Language set to: ${finalLang.toUpperCase()}`, 'color: #00FF00; font-weight: bold; font-size: 14px;');
+    console.log('');
+    
+    printExamples(finalLang);
+    return true;
+  };
+
+  window.help = function() {
+    console.clear();
+    printWelcome();
+  };
+
+  function printExamples(lang) {
+    console.log('%c📖 EXAMPLES FOR YOUR LANGUAGE:', 'color: #00BFFF; font-weight: bold; font-size: 14px;');
+    console.log('');
+    
+    if (lang === 'java') {
+      console.log('%cJAVA SYNTAX:', 'color: #FFA500; font-weight: bold;');
+      console.log('  // Find by role');
+      console.log('  page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Login"))');
+      console.log('');
+      console.log('  // Find by text');
+      console.log('  page.getByText("Welcome")');
+      console.log('  page.getByText("Welcome", new Page.GetByTextOptions().setExact(true))');
+      console.log('');
+      console.log('  // Find by label');
+      console.log('  page.getByLabel("Email")');
+      console.log('');
+      console.log('  // Find by placeholder');
+      console.log('  page.getByPlaceholder("Enter username")');
+      console.log('');
+      console.log('  // Find by test ID');
+      console.log('  page.getByTestId("submit-button")');
+      console.log('');
+      console.log('  // CSS/XPath selector');
+      console.log('  page.locator("button.primary")');
+      console.log('  page.locator("//button[@type=\'submit\']")');
+      console.log('');
+      console.log('  // With regex (case-insensitive)');
+      console.log('  page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions()');
+      console.log('      .setName(Pattern.compile("submit", Pattern.CASE_INSENSITIVE)))');
+      
+    } else if (lang === 'python') {
+      console.log('%cPYTHON SYNTAX:', 'color: #FFA500; font-weight: bold;');
+      console.log('  # Find by role');
+      console.log('  python.page.get_by_role("button", name="Login")');
+      console.log('');
+      console.log('  # Find by text');
+      console.log('  python.page.get_by_text("Welcome")');
+      console.log('  python.page.get_by_text("Welcome", exact=True)');
+      console.log('');
+      console.log('  # Find by label');
+      console.log('  python.page.get_by_label("Email")');
+      console.log('');
+      console.log('  # Find by placeholder');
+      console.log('  python.page.get_by_placeholder("Enter username")');
+      console.log('');
+      console.log('  # Find by test ID');
+      console.log('  python.page.get_by_test_id("submit-button")');
+      console.log('');
+      console.log('  # CSS/XPath selector');
+      console.log('  python.page.locator("button.primary")');
+      console.log('  python.page.locator("//button[@type=\'submit\']")');
+      
+    } else if (lang === 'javascript' || lang === 'typescript') {
+      console.log('%cJAVASCRIPT/TYPESCRIPT SYNTAX:', 'color: #FFA500; font-weight: bold;');
+      console.log('  // Note: Use the Java syntax with page.getByRole() etc.');
+      console.log('  // Or use Python syntax with python.page.get_by_role() etc.');
+      console.log('  page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Login"))');
+      console.log('  page.getByText("Welcome")');
+      console.log('  page.getByLabel("Email")');
+    }
+    
+    console.log('');
+    console.log('%c🛠️  UTILITIES:', 'color: #9370DB; font-weight: bold;');
+    console.log('  showAllRoles()              - Show all ARIA roles on the page');
+    console.log('  showAccessibleName("button") - Show accessible name of element');
+    console.log('  clearHighlights()           - Clear all highlights');
+    console.log('  help()                      - Show this help again');
+    console.log('');
+  }
+
+  function printWelcome() {
+    console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #00FF00;');
+    console.log('%c║   🎭  PLAYWRIGHT LOCATOR FINDER - PROFESSIONAL EDITION   🎭    ║', 'color: #00FF00; font-weight: bold; font-size: 16px;');
+    console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #00FF00;');
+    console.log('');
+    console.log('%c🚀 QUICK START:', 'color: #FFD700; font-weight: bold; font-size: 14px;');
+    console.log('  1️⃣  Choose your language:');
+    console.log('      setLanguage("java")        - For Java');
+    console.log('      setLanguage("python")      - For Python');
+    console.log('      setLanguage("javascript")  - For JavaScript/TypeScript');
+    console.log('');
+    console.log('  2️⃣  Use your native Playwright syntax:');
+    console.log('      • Elements will highlight on the page');
+    console.log('      • Results will show in a table');
+    console.log('      • Copy working locators to your test code');
+    console.log('');
+    console.log('%c💡 JAVA EXAMPLE:', 'color: #00BFFF; font-weight: bold;');
+    console.log('  setLanguage("java")');
+    console.log('  page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Login"))');
+    console.log('  page.getByLabel("Password")');
+    console.log('  page.getByTestId("submit")');
+    console.log('');
+    console.log('%c💡 PYTHON EXAMPLE:', 'color: #00BFFF; font-weight: bold;');
+    console.log('  setLanguage("python")');
+    console.log('  python.page.get_by_role("button", name="Login")');
+    console.log('  python.page.get_by_label("Password")');
+    console.log('  python.page.get_by_test_id("submit")');
+    console.log('');
+    console.log('%c🎯 KEY FEATURES:', 'color: #FF69B4; font-weight: bold;');
+    console.log('  ✅ Native syntax support for Java, Python, JavaScript');
+    console.log('  ✅ W3C-compliant accessible name calculation');
+    console.log('  ✅ Visual highlighting with color-coded results');
+    console.log('  ✅ Complete AriaRole enum support');
+    console.log('  ✅ Regex pattern matching');
+    console.log('  ✅ XPath and CSS selector support');
+    console.log('');
+    console.log('%c════════════════════════════════════════════════════════════════', 'color: #00FF00;');
+    console.log('%cType: setLanguage("java") or setLanguage("python") to begin!', 'color: #888; font-style: italic;');
+    console.log('');
+  }
+
+  // ============================================
+  // INITIALIZATION
+  // ============================================
+
+  // Print welcome message
+  printWelcome();
+
+  // Auto-detect and suggest language based on common patterns
+  setTimeout(() => {
+    console.log('%c💭 TIP: Not sure which syntax to use?', 'color: #FFA500; font-weight: bold;');
+    console.log('%c   Try: setLanguage("java") for most automation frameworks', 'color: #888;');
+  }, 1000);
+
+})();
+
+// ============================================
+// ADDITIONAL INSTRUCTIONS PRINTED TO CONSOLE
+// ============================================
+console.log('');
+console.log('%c📚 CHEAT SHEET:', 'color: #00CED1; font-weight: bold;');
+console.log('');
+console.log('%cJAVA - Direct Copy-Paste Syntax:', 'color: #FFD700;');
+console.log('  setLanguage("java")');
+console.log('  page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Click me"))');
+console.log('  page.getByText("Welcome")');
+console.log('  page.getByLabel("Username")');
+console.log('  page.getByPlaceholder("Search...")');
+console.log('  page.getByAltText("Logo")');
+console.log('  page.getByTitle("Close")');
+console.log('  page.getByTestId("submit-btn")');
+console.log('  page.locator("button.primary")');
+console.log('');
+console.log('%cPYTHON - Direct Copy-Paste Syntax:', 'color: #FFD700;');
+console.log('  setLanguage("python")');
+console.log('  python.page.get_by_role("button", name="Click me")');
+console.log('  python.page.get_by_text("Welcome")');
+console.log('  python.page.get_by_label("Username")');
+console.log('  python.page.get_by_placeholder("Search...")');
+console.log('  python.page.get_by_alt_text("Logo")');
+console.log('  python.page.get_by_title("Close")');
+console.log('  python.page.get_by_test_id("submit-btn")');
+console.log('  python.page.locator("button.primary")');
+console.log('');
+console.log('%c════════════════════════════════════════════════════════════════', 'color: #00FF00;');
+console.log('%c✨ Tool loaded successfully! Choose your language to begin.', 'color: #00FF00; font-weight: bold;');
+console.log('');

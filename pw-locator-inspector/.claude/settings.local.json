@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/debsa/OneDrive/Desktop/PwLocator/pw-locator-inspector/devtools/**)",
+      "Read(//c/Users/debsa/OneDrive/Desktop/PwLocator/pw-locator-inspector/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

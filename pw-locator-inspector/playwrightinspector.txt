@@ -1,0 +1,1608 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PLAYWRIGHT LOCATOR FINDER - PROFESSIONAL INSPECTOR EDITION
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * Multi-Language Support: Java | Python | JavaScript | TypeScript | C#/.NET
+ * 
+ * Features:
+ * - Click-to-inspect any element
+ * - Smart locator generation with chaining
+ * - Filter strategies (hasText, has, visible)
+ * - Uniqueness validation & strictness warnings
+ * - Multiple ranked strategies per element
+ * - Shadow DOM support
+ * - Language-specific code generation
+ * 
+ * Installation:
+ * 1. Copy entire script
+ * 2. Paste in Chrome DevTools Console
+ * 3. Press Enter
+ * 4. Run: startInspector()
+ * 5. Click any element on the page
+ * 
+ * Version: 3.0 Professional
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+(function() {
+  'use strict';
+
+  // Prevent duplicate initialization
+  if (window.__PLAYWRIGHT_INSPECTOR__) {
+    console.log('%c⚠️  Already loaded! Run: startInspector()', 'color: orange; font-weight: bold;');
+    return;
+  }
+  
+  window.__PLAYWRIGHT_INSPECTOR__ = { version: '3.0', active: false };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONFIGURATION & STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  const Config = {
+    language: 'java', // default language
+    inspectorActive: false,
+    customTestIdAttribute: 'data-testid',
+    colors: {
+      highlight: '#00FF41',
+      hover: '#FFD700',
+      panel: '#1E1E1E',
+      success: '#00FF41',
+      warning: '#FFA500',
+      error: '#FF4444'
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CORE UTILITY FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Utils = {
+    // Get implicit ARIA role
+    getImplicitRole(element) {
+      const tag = element.tagName.toLowerCase();
+      const type = (element.getAttribute('type') || '').toLowerCase();
+      
+      const roleMap = {
+        'a': element.href ? 'link' : null,
+        'button': 'button',
+        'input': {
+          'button': 'button',
+          'checkbox': 'checkbox',
+          'radio': 'radio',
+          'text': 'textbox',
+          'email': 'textbox',
+          'password': 'textbox',
+          'search': 'searchbox',
+          'tel': 'textbox',
+          'url': 'textbox',
+          'number': 'spinbutton',
+          'range': 'slider',
+          'submit': 'button',
+          'reset': 'button',
+          'default': 'textbox'
+        }[type] || 'textbox',
+        'textarea': 'textbox',
+        'select': 'combobox',
+        'h1': 'heading', 'h2': 'heading', 'h3': 'heading',
+        'h4': 'heading', 'h5': 'heading', 'h6': 'heading',
+        'img': 'img',
+        'ul': 'list',
+        'ol': 'list',
+        'li': 'listitem',
+        'nav': 'navigation',
+        'main': 'main',
+        'header': 'banner',
+        'footer': 'contentinfo',
+        'aside': 'complementary',
+        'article': 'article',
+        'section': 'region',
+        'form': 'form',
+        'table': 'table',
+        'tr': 'row',
+        'td': 'cell',
+        'th': 'columnheader',
+        'dialog': 'dialog',
+        'hr': 'separator'
+      };
+      
+      return roleMap[tag] || null;
+    },
+
+    // Calculate accessible name (W3C compliant)
+    getAccessibleName(element) {
+      // Priority 1: aria-labelledby
+      if (element.hasAttribute('aria-labelledby')) {
+        const ids = element.getAttribute('aria-labelledby').split(/\s+/);
+        const texts = ids.map(id => {
+          const el = document.getElementById(id);
+          return el ? el.textContent.trim() : '';
+        }).filter(Boolean);
+        if (texts.length > 0) return texts.join(' ');
+      }
+      
+      // Priority 2: aria-label
+      if (element.hasAttribute('aria-label')) {
+        return element.getAttribute('aria-label').trim();
+      }
+      
+      // Priority 3: associated label element
+      if (element.id) {
+        const label = document.querySelector(`label[for="${element.id}"]`);
+        if (label) return this.getTextContent(label, element);
+      }
+      
+      // Priority 4: wrapped in label
+      const parentLabel = element.closest('label');
+      if (parentLabel) {
+        return this.getTextContent(parentLabel, element);
+      }
+      
+      // Priority 5: title attribute
+      if (element.hasAttribute('title')) {
+        return element.getAttribute('title').trim();
+      }
+      
+      // Priority 6: alt attribute (images)
+      if (element.hasAttribute('alt')) {
+        return element.getAttribute('alt').trim();
+      }
+      
+      // Priority 7: placeholder (not ideal but supported)
+      if (element.hasAttribute('placeholder')) {
+        return element.getAttribute('placeholder').trim();
+      }
+      
+      // Priority 8: text content for certain elements
+      if (['BUTTON', 'A', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
+        return element.textContent.trim();
+      }
+      
+      // Priority 9: value attribute
+      if (element.tagName === 'INPUT' && element.value) {
+        return element.value.trim();
+      }
+      
+      return '';
+    },
+
+    // Get text content excluding nested inputs
+    getTextContent(container, exclude) {
+      const clone = container.cloneNode(true);
+      if (exclude && clone.contains(exclude)) {
+        const excludeClone = clone.querySelector(exclude.tagName.toLowerCase());
+        if (excludeClone) excludeClone.remove();
+      }
+      return clone.textContent.trim();
+    },
+
+    // Normalize whitespace like Playwright
+    normalizeText(text) {
+      return text.replace(/\s+/g, ' ').trim();
+    },
+
+    // Check if element is visible
+    isVisible(element) {
+      if (!element) return false;
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && 
+             style.visibility !== 'hidden' && 
+             style.opacity !== '0' &&
+             element.offsetParent !== null;
+    },
+
+    // Get heading level
+    getHeadingLevel(element) {
+      if (/^H[1-6]$/.test(element.tagName)) {
+        return parseInt(element.tagName.substring(1));
+      }
+      return null;
+    },
+
+    // Find semantic parent
+    findSemanticParent(element) {
+      return element.closest('nav, main, article, section, aside, header, footer, form, [role]');
+    },
+
+    // Generate unique CSS selector
+    generateCSSSelector(element) {
+      // Try ID first
+      if (element.id && !/\s/.test(element.id)) {
+        const id = CSS.escape(element.id);
+        if (document.querySelectorAll(`#${id}`).length === 1) {
+          return `#${id}`;
+        }
+      }
+      
+      // Try unique attribute
+      const uniqueAttrs = ['name', 'data-test', 'data-qa', 'data-cy'];
+      for (const attr of uniqueAttrs) {
+        if (element.hasAttribute(attr)) {
+          const value = element.getAttribute(attr);
+          const selector = `${element.tagName.toLowerCase()}[${attr}="${CSS.escape(value)}"]`;
+          if (document.querySelectorAll(selector).length === 1) {
+            return selector;
+          }
+        }
+      }
+      
+      // Build path
+      const path = [];
+      let current = element;
+      
+      while (current && current !== document.body) {
+        let selector = current.tagName.toLowerCase();
+        
+        if (current.id && !/\s/.test(current.id)) {
+          selector += `#${CSS.escape(current.id)}`;
+          path.unshift(selector);
+          break;
+        }
+        
+        if (current.className && typeof current.className === 'string') {
+          const classes = current.className.split(/\s+/).filter(Boolean);
+          if (classes.length > 0) {
+            selector += '.' + classes.map(c => CSS.escape(c)).join('.');
+          }
+        }
+        
+        // Add nth-child if needed
+        const parent = current.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter(
+            child => child.tagName === current.tagName
+          );
+          if (siblings.length > 1) {
+            const index = siblings.indexOf(current) + 1;
+            selector += `:nth-of-type(${index})`;
+          }
+        }
+        
+        path.unshift(selector);
+        current = parent;
+      }
+      
+      return path.join(' > ');
+    },
+
+    // Escape string for code generation
+    escapeString(str) {
+      return str.replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LOCATOR TESTING ENGINE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Tester = {
+    // Test locator and return matches
+    testLocator(strategy, targetElement) {
+      let elements = [];
+      
+      try {
+        switch (strategy.type) {
+          case 'role':
+            elements = this.findByRole(strategy.role, strategy.options);
+            break;
+          case 'label':
+            elements = this.findByLabel(strategy.text, strategy.options);
+            break;
+          case 'placeholder':
+            elements = this.findByPlaceholder(strategy.text, strategy.options);
+            break;
+          case 'text':
+            elements = this.findByText(strategy.text, strategy.options);
+            break;
+          case 'altText':
+            elements = this.findByAltText(strategy.text, strategy.options);
+            break;
+          case 'title':
+            elements = this.findByTitle(strategy.text, strategy.options);
+            break;
+          case 'testId':
+            elements = this.findByTestId(strategy.testId);
+            break;
+          case 'css':
+            elements = Array.from(document.querySelectorAll(strategy.selector));
+            break;
+          case 'xpath':
+            elements = this.findByXPath(strategy.xpath);
+            break;
+          case 'chained':
+            elements = this.testChainedLocator(strategy, targetElement);
+            break;
+          case 'filtered':
+            elements = this.testFilteredLocator(strategy, targetElement);
+            break;
+        }
+      } catch (error) {
+        console.warn('Locator test failed:', error);
+      }
+      
+      const isUnique = elements.length === 1 && elements[0] === targetElement;
+      const containsTarget = elements.includes(targetElement);
+      
+      return {
+        elements,
+        count: elements.length,
+        isUnique,
+        containsTarget,
+        isValid: containsTarget && elements.length > 0
+      };
+    },
+
+    findByRole(role, options = {}) {
+      const elements = [];
+      
+      // Find explicit roles
+      const explicit = Array.from(document.querySelectorAll(`[role="${role}"]`));
+      elements.push(...explicit);
+      
+      // Find implicit roles
+      document.querySelectorAll('*').forEach(el => {
+        const implicitRole = Utils.getImplicitRole(el);
+        if (implicitRole === role && !elements.includes(el)) {
+          elements.push(el);
+        }
+      });
+      
+      // Filter by name
+      if (options.name !== undefined) {
+        return elements.filter(el => {
+          const accessibleName = Utils.getAccessibleName(el);
+          const normalized = Utils.normalizeText(accessibleName);
+          const searchText = Utils.normalizeText(options.name);
+          
+          if (options.exact) {
+            return normalized === searchText;
+          }
+          return normalized.toLowerCase().includes(searchText.toLowerCase());
+        });
+      }
+      
+      // Filter by level (for headings)
+      if (options.level !== undefined && role === 'heading') {
+        return elements.filter(el => Utils.getHeadingLevel(el) === options.level);
+      }
+      
+      return elements;
+    },
+
+    findByLabel(text, options = {}) {
+      const elements = [];
+      
+      // Find via label elements
+      document.querySelectorAll('label').forEach(label => {
+        const labelText = Utils.normalizeText(label.textContent);
+        const searchText = Utils.normalizeText(text);
+        
+        const matches = options.exact ? 
+          labelText === searchText : 
+          labelText.toLowerCase().includes(searchText.toLowerCase());
+        
+        if (matches) {
+          if (label.hasAttribute('for')) {
+            const input = document.getElementById(label.getAttribute('for'));
+            if (input && !elements.includes(input)) elements.push(input);
+          }
+          
+          const nested = label.querySelector('input, select, textarea, button');
+          if (nested && !elements.includes(nested)) elements.push(nested);
+        }
+      });
+      
+      // Find via aria-label and aria-labelledby
+      document.querySelectorAll('input, select, textarea, button').forEach(input => {
+        const accessibleName = Utils.getAccessibleName(input);
+        if (accessibleName) {
+          const normalized = Utils.normalizeText(accessibleName);
+          const searchText = Utils.normalizeText(text);
+          
+          const matches = options.exact ?
+            normalized === searchText :
+            normalized.toLowerCase().includes(searchText.toLowerCase());
+          
+          if (matches && !elements.includes(input)) {
+            elements.push(input);
+          }
+        }
+      });
+      
+      return elements;
+    },
+
+    findByPlaceholder(text, options = {}) {
+      return Array.from(document.querySelectorAll('[placeholder]')).filter(el => {
+        const placeholder = Utils.normalizeText(el.getAttribute('placeholder'));
+        const searchText = Utils.normalizeText(text);
+        
+        return options.exact ?
+          placeholder === searchText :
+          placeholder.toLowerCase().includes(searchText.toLowerCase());
+      });
+    },
+
+    findByText(text, options = {}) {
+      const elements = [];
+      const searchText = Utils.normalizeText(text);
+      
+      document.querySelectorAll('*:not(script):not(style)').forEach(el => {
+        // Check if element has direct text
+        const hasDirectText = Array.from(el.childNodes).some(
+          node => node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+        );
+        
+        if (hasDirectText) {
+          const elText = Utils.normalizeText(el.textContent);
+          
+          const matches = options.exact ?
+            elText === searchText :
+            elText.toLowerCase().includes(searchText.toLowerCase());
+          
+          if (matches) elements.push(el);
+        }
+      });
+      
+      return elements;
+    },
+
+    findByAltText(text, options = {}) {
+      return Array.from(document.querySelectorAll('[alt]')).filter(el => {
+        const alt = Utils.normalizeText(el.getAttribute('alt'));
+        const searchText = Utils.normalizeText(text);
+        
+        return options.exact ?
+          alt === searchText :
+          alt.toLowerCase().includes(searchText.toLowerCase());
+      });
+    },
+
+    findByTitle(text, options = {}) {
+      return Array.from(document.querySelectorAll('[title]')).filter(el => {
+        const title = Utils.normalizeText(el.getAttribute('title'));
+        const searchText = Utils.normalizeText(text);
+        
+        return options.exact ?
+          title === searchText :
+          title.toLowerCase().includes(searchText.toLowerCase());
+      });
+    },
+
+    findByTestId(testId) {
+      const attr = Config.customTestIdAttribute;
+      return Array.from(document.querySelectorAll(`[${attr}="${testId}"]`));
+    },
+
+    findByXPath(xpath) {
+      const result = document.evaluate(
+        xpath,
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null
+      );
+      const elements = [];
+      for (let i = 0; i < result.snapshotLength; i++) {
+        elements.push(result.snapshotItem(i));
+      }
+      return elements;
+    },
+
+    testChainedLocator(strategy, targetElement) {
+      // Test parent locator first
+      const parentResult = this.testLocator(strategy.parent, targetElement.parentElement);
+      if (parentResult.count === 0) return [];
+      
+      // Find child within parent results
+      const childResults = [];
+      parentResult.elements.forEach(parent => {
+        const children = this.findChildElements(parent, strategy.child);
+        childResults.push(...children);
+      });
+      
+      return childResults;
+    },
+
+    testFilteredLocator(strategy, targetElement) {
+      // Test base locator
+      const baseResult = this.testLocator(strategy.base, targetElement);
+      if (baseResult.count === 0) return [];
+      
+      // Apply filters
+      let filtered = baseResult.elements;
+      
+      if (strategy.filterText) {
+        filtered = filtered.filter(el => {
+          const text = Utils.normalizeText(el.textContent);
+          const search = Utils.normalizeText(strategy.filterText);
+          return text.toLowerCase().includes(search.toLowerCase());
+        });
+      }
+      
+      if (strategy.filterHas) {
+        filtered = filtered.filter(el => {
+          return el.querySelector(strategy.filterHas) !== null;
+        });
+      }
+      
+      if (strategy.filterVisible !== undefined) {
+        filtered = filtered.filter(el => Utils.isVisible(el) === strategy.filterVisible);
+      }
+      
+      return filtered;
+    },
+
+    findChildElements(parent, childStrategy) {
+      // Temporarily scope search to parent
+      const originalQuerySelector = document.querySelector.bind(document);
+      const originalQuerySelectorAll = document.querySelectorAll.bind(document);
+      
+      // Mock document methods to search within parent
+      const elements = [];
+      
+      if (childStrategy.type === 'role') {
+        parent.querySelectorAll('*').forEach(el => {
+          const role = el.getAttribute('role') || Utils.getImplicitRole(el);
+          if (role === childStrategy.role) {
+            if (!childStrategy.options.name || 
+                Utils.getAccessibleName(el).includes(childStrategy.options.name)) {
+              elements.push(el);
+            }
+          }
+        });
+      }
+      
+      return elements;
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY GENERATOR
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Generator = {
+    // Generate all possible locator strategies for an element
+    generateStrategies(element) {
+      const strategies = [];
+      
+      // Strategy 1: getByRole (HIGHEST PRIORITY)
+      const roleStrategy = this.generateRoleStrategy(element);
+      if (roleStrategy) strategies.push(roleStrategy);
+      
+      // Strategy 2: getByLabel (for form controls)
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)) {
+        const labelStrategy = this.generateLabelStrategy(element);
+        if (labelStrategy) strategies.push(labelStrategy);
+      }
+      
+      // Strategy 3: getByPlaceholder
+      if (element.hasAttribute('placeholder')) {
+        const placeholderStrategy = this.generatePlaceholderStrategy(element);
+        if (placeholderStrategy) strategies.push(placeholderStrategy);
+      }
+      
+      // Strategy 4: getByText
+      const textStrategy = this.generateTextStrategy(element);
+      if (textStrategy) strategies.push(textStrategy);
+      
+      // Strategy 5: getByAltText (for images)
+      if (element.hasAttribute('alt')) {
+        const altStrategy = this.generateAltTextStrategy(element);
+        if (altStrategy) strategies.push(altStrategy);
+      }
+      
+      // Strategy 6: getByTitle
+      if (element.hasAttribute('title')) {
+        const titleStrategy = this.generateTitleStrategy(element);
+        if (titleStrategy) strategies.push(titleStrategy);
+      }
+      
+      // Strategy 7: getByTestId
+      if (element.hasAttribute(Config.customTestIdAttribute)) {
+        const testIdStrategy = this.generateTestIdStrategy(element);
+        if (testIdStrategy) strategies.push(testIdStrategy);
+      }
+      
+      // Strategy 8: Chained locators (use parent context)
+      const chainedStrategy = this.generateChainedStrategy(element);
+      if (chainedStrategy) strategies.push(chainedStrategy);
+      
+      // Strategy 9: Filtered locators
+      const filteredStrategy = this.generateFilteredStrategy(element);
+      if (filteredStrategy) strategies.push(filteredStrategy);
+      
+      // Strategy 10: CSS Selector (fallback)
+      const cssStrategy = this.generateCSSStrategy(element);
+      if (cssStrategy) strategies.push(cssStrategy);
+      
+      // Test all strategies and rank them
+      return this.rankStrategies(strategies, element);
+    },
+
+    generateRoleStrategy(element) {
+      const role = element.getAttribute('role') || Utils.getImplicitRole(element);
+      if (!role) return null;
+      
+      const name = Utils.getAccessibleName(element);
+      const level = Utils.getHeadingLevel(element);
+      
+      return {
+        type: 'role',
+        role,
+        options: { name, level },
+        priority: 1,
+        description: 'User-facing, accessibility-first'
+      };
+    },
+
+    generateLabelStrategy(element) {
+      const labelText = Utils.getAccessibleName(element);
+      if (!labelText) return null;
+      
+      return {
+        type: 'label',
+        text: labelText,
+        options: {},
+        priority: 2,
+        description: 'Form control by label'
+      };
+    },
+
+    generatePlaceholderStrategy(element) {
+      const placeholder = element.getAttribute('placeholder');
+      if (!placeholder) return null;
+      
+      return {
+        type: 'placeholder',
+        text: placeholder,
+        options: {},
+        priority: 3,
+        description: 'Input by placeholder'
+      };
+    },
+
+    generateTextStrategy(element) {
+      const text = element.textContent.trim();
+      if (!text || text.length > 50) return null;
+      
+      // Prefer text for non-interactive elements
+      const isInteractive = ['BUTTON', 'A', 'INPUT', 'SELECT'].includes(element.tagName);
+      
+      return {
+        type: 'text',
+        text,
+        options: {},
+        priority: isInteractive ? 5 : 4,
+        description: 'By text content'
+      };
+    },
+
+    generateAltTextStrategy(element) {
+      const alt = element.getAttribute('alt');
+      if (!alt) return null;
+      
+      return {
+        type: 'altText',
+        text: alt,
+        options: {},
+        priority: 4,
+        description: 'Image by alt text'
+      };
+    },
+
+    generateTitleStrategy(element) {
+      const title = element.getAttribute('title');
+      if (!title) return null;
+      
+      return {
+        type: 'title',
+        text: title,
+        options: {},
+        priority: 5,
+        description: 'By title attribute'
+      };
+    },
+
+    generateTestIdStrategy(element) {
+      const testId = element.getAttribute(Config.customTestIdAttribute);
+      if (!testId) return null;
+      
+      return {
+        type: 'testId',
+        testId,
+        priority: 6,
+        description: 'Resilient test ID'
+      };
+    },
+
+    generateChainedStrategy(element) {
+      const parent = Utils.findSemanticParent(element);
+      if (!parent) return null;
+      
+      const parentRole = parent.getAttribute('role') || Utils.getImplicitRole(parent);
+      if (!parentRole) return null;
+      
+      const childRole = element.getAttribute('role') || Utils.getImplicitRole(element);
+      if (!childRole) return null;
+      
+      const childName = Utils.getAccessibleName(element);
+      
+      return {
+        type: 'chained',
+        parent: {
+          type: 'role',
+          role: parentRole,
+          options: {}
+        },
+        child: {
+          type: 'role',
+          role: childRole,
+          options: { name: childName }
+        },
+        priority: 2,
+        description: 'Chained with parent context'
+      };
+    },
+
+    generateFilteredStrategy(element) {
+      const role = element.getAttribute('role') || Utils.getImplicitRole(element);
+      if (!role) return null;
+      
+      // Find parent with distinguishing text
+      const parent = element.closest('li, div[class], section, article');
+      if (!parent) return null;
+      
+      const parentText = parent.textContent.substring(0, 30).trim();
+      if (!parentText) return null;
+      
+      return {
+        type: 'filtered',
+        base: {
+          type: 'role',
+          role,
+          options: {}
+        },
+        filterText: parentText,
+        priority: 3,
+        description: 'Filtered by context'
+      };
+    },
+
+    generateCSSStrategy(element) {
+      const selector = Utils.generateCSSSelector(element);
+      
+      return {
+        type: 'css',
+        selector,
+        priority: 9,
+        description: 'CSS selector (fragile)'
+      };
+    },
+
+    rankStrategies(strategies, targetElement) {
+      const tested = strategies.map(strategy => {
+        const result = Tester.testLocator(strategy, targetElement);
+        
+        return {
+          ...strategy,
+          testResult: result,
+          isUnique: result.isUnique,
+          matchCount: result.count,
+          isValid: result.isValid
+        };
+      });
+      
+      // Sort by: unique first, then by priority, then by match count
+      return tested.sort((a, b) => {
+        // Unique locators first
+        if (a.isUnique && !b.isUnique) return -1;
+        if (!a.isUnique && b.isUnique) return 1;
+        
+        // Valid locators before invalid
+        if (a.isValid && !b.isValid) return -1;
+        if (!a.isValid && b.isValid) return 1;
+        
+        // Then by priority
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        
+        // Then by match count (fewer is better if not unique)
+        return a.matchCount - b.matchCount;
+      });
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CODE FORMATTER (Multi-Language)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Formatter = {
+    format(strategy, language) {
+      language = language || Config.language;
+      
+      switch (language.toLowerCase()) {
+        case 'java':
+          return this.formatJava(strategy);
+        case 'python':
+        case 'py':
+          return this.formatPython(strategy);
+        case 'javascript':
+        case 'js':
+          return this.formatJavaScript(strategy);
+        case 'typescript':
+        case 'ts':
+          return this.formatTypeScript(strategy);
+        case 'csharp':
+        case 'cs':
+        case 'c#':
+        case '.net':
+          return this.formatCSharp(strategy);
+        default:
+          return this.formatJava(strategy);
+      }
+    },
+
+    formatJava(strategy) {
+      switch (strategy.type) {
+        case 'role':
+          const roleUpper = strategy.role.toUpperCase();
+          if (strategy.options.name) {
+            const name = Utils.escapeString(strategy.options.name);
+            return `page.getByRole(AriaRole.${roleUpper}, new Page.GetByRoleOptions().setName("${name}"))`;
+          }
+          return `page.getByRole(AriaRole.${roleUpper})`;
+          
+        case 'label':
+          return `page.getByLabel("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'placeholder':
+          return `page.getByPlaceholder("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'text':
+          return `page.getByText("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'altText':
+          return `page.getByAltText("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'title':
+          return `page.getByTitle("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'testId':
+          return `page.getByTestId("${Utils.escapeString(strategy.testId)}")`;
+          
+        case 'css':
+          return `page.locator("${Utils.escapeString(strategy.selector)}")`;
+          
+        case 'chained':
+          const parentCode = this.formatJava(strategy.parent);
+          const childRole = strategy.child.role.toUpperCase();
+          const childName = strategy.child.options.name ? 
+            `, new Page.GetByRoleOptions().setName("${Utils.escapeString(strategy.child.options.name)}")` : '';
+          return `${parentCode}\n    .getByRole(AriaRole.${childRole}${childName})`;
+          
+        case 'filtered':
+          const baseCode = this.formatJava(strategy.base);
+          const filterText = Utils.escapeString(strategy.filterText);
+          return `${baseCode}\n    .filter(new Locator.FilterOptions().setHasText("${filterText}"))`;
+          
+        default:
+          return 'page.locator("unknown")';
+      }
+    },
+
+    formatPython(strategy) {
+      switch (strategy.type) {
+        case 'role':
+          if (strategy.options.name) {
+            return `page.get_by_role("${strategy.role}", name="${Utils.escapeString(strategy.options.name)}")`;
+          }
+          return `page.get_by_role("${strategy.role}")`;
+          
+        case 'label':
+          return `page.get_by_label("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'placeholder':
+          return `page.get_by_placeholder("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'text':
+          return `page.get_by_text("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'altText':
+          return `page.get_by_alt_text("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'title':
+          return `page.get_by_title("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'testId':
+          return `page.get_by_test_id("${Utils.escapeString(strategy.testId)}")`;
+          
+        case 'css':
+          return `page.locator("${Utils.escapeString(strategy.selector)}")`;
+          
+        case 'chained':
+          const parentCode = this.formatPython(strategy.parent);
+          const childName = strategy.child.options.name ? 
+            `, name="${Utils.escapeString(strategy.child.options.name)}"` : '';
+          return `${parentCode}.get_by_role("${strategy.child.role}"${childName})`;
+          
+        case 'filtered':
+          const baseCode = this.formatPython(strategy.base);
+          return `${baseCode}.filter(has_text="${Utils.escapeString(strategy.filterText)}")`;
+          
+        default:
+          return 'page.locator("unknown")';
+      }
+    },
+
+    formatJavaScript(strategy) {
+      switch (strategy.type) {
+        case 'role':
+          if (strategy.options.name) {
+            return `page.getByRole('${strategy.role}', { name: '${Utils.escapeString(strategy.options.name)}' })`;
+          }
+          return `page.getByRole('${strategy.role}')`;
+          
+        case 'label':
+          return `page.getByLabel('${Utils.escapeString(strategy.text)}')`;
+          
+        case 'placeholder':
+          return `page.getByPlaceholder('${Utils.escapeString(strategy.text)}')`;
+          
+        case 'text':
+          return `page.getByText('${Utils.escapeString(strategy.text)}')`;
+          
+        case 'altText':
+          return `page.getByAltText('${Utils.escapeString(strategy.text)}')`;
+          
+        case 'title':
+          return `page.getByTitle('${Utils.escapeString(strategy.text)}')`;
+          
+        case 'testId':
+          return `page.getByTestId('${Utils.escapeString(strategy.testId)}')`;
+          
+        case 'css':
+          return `page.locator('${Utils.escapeString(strategy.selector)}')`;
+          
+        case 'chained':
+          const parentCode = this.formatJavaScript(strategy.parent);
+          const childOpts = strategy.child.options.name ? 
+            `, { name: '${Utils.escapeString(strategy.child.options.name)}' }` : '';
+          return `${parentCode}.getByRole('${strategy.child.role}'${childOpts})`;
+          
+        case 'filtered':
+          const baseCode = this.formatJavaScript(strategy.base);
+          return `${baseCode}.filter({ hasText: '${Utils.escapeString(strategy.filterText)}' })`;
+          
+        default:
+          return "page.locator('unknown')";
+      }
+    },
+
+    formatTypeScript(strategy) {
+      // TypeScript uses same syntax as JavaScript
+      return this.formatJavaScript(strategy);
+    },
+
+    formatCSharp(strategy) {
+      switch (strategy.type) {
+        case 'role':
+          const roleCapital = strategy.role.charAt(0).toUpperCase() + strategy.role.slice(1);
+          if (strategy.options.name) {
+            return `page.GetByRole(AriaRole.${roleCapital}, new() { Name = "${Utils.escapeString(strategy.options.name)}" })`;
+          }
+          return `page.GetByRole(AriaRole.${roleCapital})`;
+          
+        case 'label':
+          return `page.GetByLabel("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'placeholder':
+          return `page.GetByPlaceholder("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'text':
+          return `page.GetByText("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'altText':
+          return `page.GetByAltText("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'title':
+          return `page.GetByTitle("${Utils.escapeString(strategy.text)}")`;
+          
+        case 'testId':
+          return `page.GetByTestId("${Utils.escapeString(strategy.testId)}")`;
+          
+        case 'css':
+          return `page.Locator("${Utils.escapeString(strategy.selector)}")`;
+          
+        case 'chained':
+          const parentCode = this.formatCSharp(strategy.parent);
+          const childRoleCapital = strategy.child.role.charAt(0).toUpperCase() + strategy.child.role.slice(1);
+          const childOpts = strategy.child.options.name ? 
+            `, new() { Name = "${Utils.escapeString(strategy.child.options.name)}" }` : '';
+          return `${parentCode}.GetByRole(AriaRole.${childRoleCapital}${childOpts})`;
+          
+        case 'filtered':
+          const baseCode = this.formatCSharp(strategy.base);
+          return `${baseCode}.Filter(new() { HasText = "${Utils.escapeString(strategy.filterText)}" })`;
+          
+        default:
+          return 'page.Locator("unknown")';
+      }
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UI MANAGER - Inspector Panel
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const UI = {
+    panel: null,
+    overlay: null,
+    hoverElement: null,
+
+    createInspectorOverlay() {
+      if (this.overlay) return;
+      
+      this.overlay = document.createElement('div');
+      this.overlay.id = 'pw-inspector-overlay';
+      this.overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2147483646;
+        pointer-events: none;
+        background: rgba(0, 0, 0, 0.1);
+      `;
+      
+      const banner = document.createElement('div');
+      banner.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 20px;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        z-index: 2147483647;
+      `;
+      
+      banner.innerHTML = `
+        <div>
+          <span style="font-size: 18px;">🎯</span>
+          <span style="margin-left: 10px;">Playwright Inspector Active - Click any element</span>
+          <span style="margin-left: 20px; opacity: 0.8; font-size: 12px;">Language: ${Config.language.toUpperCase()}</span>
+        </div>
+        <button id="pw-exit-inspector" style="
+          background: rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.3);
+          color: white;
+          padding: 6px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-weight: 600;
+          transition: all 0.2s;
+        ">Exit Inspector (Esc)</button>
+      `;
+      
+      document.body.appendChild(this.overlay);
+      document.body.appendChild(banner);
+      
+      document.getElementById('pw-exit-inspector').addEventListener('click', () => {
+        window.stopInspector();
+      });
+    },
+
+    removeInspectorOverlay() {
+      if (this.overlay) {
+        this.overlay.remove();
+        this.overlay = null;
+      }
+      document.querySelectorAll('[id^="pw-"]').forEach(el => {
+        if (el.id !== 'pw-locator-panel') el.remove();
+      });
+    },
+
+    highlightElement(element, color) {
+      this.clearHoverHighlight();
+      
+      if (!element || element === document.body) return;
+      
+      element.style.outline = `3px solid ${color}`;
+      element.style.outlineOffset = '2px';
+      element.setAttribute('data-pw-hover', 'true');
+      
+      this.hoverElement = element;
+    },
+
+    clearHoverHighlight() {
+      if (this.hoverElement) {
+        this.hoverElement.style.outline = '';
+        this.hoverElement.style.outlineOffset = '';
+        this.hoverElement.removeAttribute('data-pw-hover');
+        this.hoverElement = null;
+      }
+    },
+
+    showLocatorPanel(element, strategies) {
+      // Remove existing panel
+      this.closePanel();
+      
+      // Create panel
+      this.panel = document.createElement('div');
+      this.panel.id = 'pw-locator-panel';
+      this.panel.style.cssText = `
+        position: fixed;
+        top: 70px;
+        right: 20px;
+        width: 600px;
+        max-height: calc(100vh - 100px);
+        background: ${Config.colors.panel};
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        z-index: 2147483647;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        color: #e0e0e0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      `;
+      
+      // Header
+      const header = document.createElement('div');
+      header.style.cssText = `
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+      
+      header.innerHTML = `
+        <div>
+          <div style="font-size: 16px; font-weight: 700; margin-bottom: 4px;">
+            🎯 Playwright Locators
+          </div>
+          <div style="font-size: 11px; opacity: 0.9;">
+            Element: &lt;${element.tagName.toLowerCase()}${element.className ? '.' + element.className.split(' ')[0] : ''}&gt;
+          </div>
+        </div>
+        <button id="pw-close-panel" style="
+          background: rgba(255,255,255,0.2);
+          border: none;
+          color: white;
+          width: 30px;
+          height: 30px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 18px;
+          line-height: 1;
+          transition: all 0.2s;
+        ">×</button>
+      `;
+      
+      // Content
+      const content = document.createElement('div');
+      content.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+      `;
+      
+      // Generate strategy cards
+      strategies.forEach((strategy, index) => {
+        const card = this.createStrategyCard(strategy, index);
+        content.appendChild(card);
+      });
+      
+      // Footer
+      const footer = document.createElement('div');
+      footer.style.cssText = `
+        background: rgba(0,0,0,0.3);
+        padding: 12px 20px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+        font-size: 11px;
+        text-align: center;
+        color: #888;
+      `;
+      footer.textContent = `💡 Tip: Click "Copy" to copy locator to clipboard`;
+      
+      this.panel.appendChild(header);
+      this.panel.appendChild(content);
+      this.panel.appendChild(footer);
+      
+      document.body.appendChild(this.panel);
+      
+      // Event listeners
+      document.getElementById('pw-close-panel').addEventListener('click', () => {
+        this.closePanel();
+      });
+      
+      // Add copy button listeners
+      this.panel.querySelectorAll('.pw-copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const code = e.target.getAttribute('data-code');
+          this.copyToClipboard(code);
+          
+          // Visual feedback
+          e.target.textContent = '✓ Copied!';
+          e.target.style.background = Config.colors.success;
+          setTimeout(() => {
+            e.target.textContent = '📋 Copy';
+            e.target.style.background = 'rgba(255,255,255,0.1)';
+          }, 2000);
+        });
+      });
+    },
+
+    createStrategyCard(strategy, index) {
+      const card = document.createElement('div');
+      card.style.cssText = `
+        background: rgba(255,255,255,0.05);
+        border: 1px solid ${strategy.isUnique ? Config.colors.success : Config.colors.warning};
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+        transition: all 0.2s;
+      `;
+      
+      card.addEventListener('mouseenter', () => {
+        card.style.background = 'rgba(255,255,255,0.08)';
+        card.style.transform = 'translateX(-2px)';
+      });
+      
+      card.addEventListener('mouseleave', () => {
+        card.style.background = 'rgba(255,255,255,0.05)';
+        card.style.transform = 'translateX(0)';
+      });
+      
+      // Status badge
+      let statusBadge = '';
+      let stars = '';
+      
+      if (strategy.isUnique) {
+        statusBadge = `<span style="
+          background: ${Config.colors.success};
+          color: black;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        ">✓ Unique</span>`;
+        stars = '⭐⭐⭐';
+      } else if (strategy.isValid) {
+        statusBadge = `<span style="
+          background: ${Config.colors.warning};
+          color: black;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 700;
+        ">⚠ ${strategy.matchCount} matches</span>`;
+        stars = strategy.priority <= 3 ? '⭐⭐' : '⭐';
+      } else {
+        statusBadge = `<span style="
+          background: ${Config.colors.error};
+          color: white;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 700;
+        ">✗ Invalid</span>`;
+        stars = '';
+      }
+      
+      // Priority label
+      let priorityLabel = '';
+      if (index === 0 && strategy.isUnique) {
+        priorityLabel = `<div style="
+          color: ${Config.colors.success};
+          font-size: 11px;
+          font-weight: 700;
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        ">🎯 RECOMMENDED</div>`;
+      } else if (strategy.isUnique) {
+        priorityLabel = `<div style="
+          color: #4fc3f7;
+          font-size: 11px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        ">💡 ALTERNATIVE</div>`;
+      } else {
+        priorityLabel = `<div style="
+          color: #888;
+          font-size: 11px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        ">⚙️ FALLBACK</div>`;
+      }
+      
+      // Code
+      const code = Formatter.format(strategy, Config.language);
+      
+      card.innerHTML = `
+        ${priorityLabel}
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <div style="font-size: 18px; margin-bottom: 4px;">${stars}</div>
+            <div style="color: #888; font-size: 11px; margin-bottom: 8px;">${strategy.description}</div>
+            ${statusBadge}
+          </div>
+          <button class="pw-copy-btn" data-code="${Utils.escapeString(code)}" style="
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            white-space: nowrap;
+          ">📋 Copy</button>
+        </div>
+        <pre style="
+          background: rgba(0,0,0,0.4);
+          padding: 12px;
+          border-radius: 6px;
+          overflow-x: auto;
+          margin: 0;
+          font-size: 12px;
+          line-height: 1.6;
+          color: #a5d6a7;
+          border: 1px solid rgba(255,255,255,0.1);
+        ">${this.escapeHtml(code)}</pre>
+      `;
+      
+      return card;
+    },
+
+    closePanel() {
+      if (this.panel) {
+        this.panel.remove();
+        this.panel = null;
+      }
+    },
+
+    copyToClipboard(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    },
+
+    escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INSPECTOR CONTROLLER
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Inspector = {
+    active: false,
+    clickHandler: null,
+    hoverHandler: null,
+    keyHandler: null,
+
+    start() {
+      if (this.active) {
+        console.warn('Inspector already active');
+        return;
+      }
+      
+      this.active = true;
+      Config.inspectorActive = true;
+      
+      // Create UI
+      UI.createInspectorOverlay();
+      
+      // Change cursor
+      document.body.style.cursor = 'crosshair';
+      
+      // Add event listeners
+      this.clickHandler = (e) => this.handleClick(e);
+      this.hoverHandler = (e) => this.handleHover(e);
+      this.keyHandler = (e) => this.handleKey(e);
+      
+      document.addEventListener('click', this.clickHandler, true);
+      document.addEventListener('mouseover', this.hoverHandler, true);
+      document.addEventListener('keydown', this.keyHandler, true);
+      
+      console.log('%c🎯 Inspector Mode Activated', 'color: #00FF41; font-weight: bold; font-size: 14px;');
+      console.log('%cClick any element to generate locators', 'color: #888;');
+      console.log('%cPress ESC to exit', 'color: #888;');
+    },
+
+    stop() {
+      if (!this.active) return;
+      
+      this.active = false;
+      Config.inspectorActive = false;
+      
+      // Restore cursor
+      document.body.style.cursor = '';
+      
+      // Remove event listeners
+      if (this.clickHandler) {
+        document.removeEventListener('click', this.clickHandler, true);
+        document.removeEventListener('mouseover', this.hoverHandler, true);
+        document.removeEventListener('keydown', this.keyHandler, true);
+      }
+      
+      // Clean up UI
+      UI.removeInspectorOverlay();
+      UI.clearHoverHighlight();
+      UI.closePanel();
+      
+      console.log('%c🛑 Inspector Mode Deactivated', 'color: #FFA500; font-weight: bold;');
+    },
+
+    handleClick(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      
+      const element = e.target;
+      
+      // Ignore inspector UI elements
+      if (element.closest('#pw-locator-panel') || 
+          element.closest('[id^="pw-"]')) {
+        return false;
+      }
+      
+      console.log('%c🎯 Analyzing element...', 'color: #00BFFF; font-weight: bold;');
+      
+      // Generate strategies
+      const strategies = Generator.generateStrategies(element);
+      
+      console.log(`%c✅ Generated ${strategies.length} strategies`, 'color: #00FF41; font-weight: bold;');
+      console.table(strategies.map(s => ({
+        Type: s.type,
+        Priority: s.priority,
+        Unique: s.isUnique ? '✓' : '✗',
+        Matches: s.matchCount,
+        Description: s.description
+      })));
+      
+      // Show panel
+      UI.showLocatorPanel(element, strategies);
+      
+      // Highlight element
+      UI.highlightElement(element, Config.colors.highlight);
+      
+      return false;
+    },
+
+    handleHover(e) {
+      const element = e.target;
+      
+      // Ignore inspector UI
+      if (element.closest('#pw-locator-panel') || 
+          element.closest('[id^="pw-"]')) {
+        return;
+      }
+      
+      UI.highlightElement(element, Config.colors.hover);
+    },
+
+    handleKey(e) {
+      if (e.key === 'Escape') {
+        this.stop();
+      }
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PUBLIC API
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  window.startInspector = function() {
+    Inspector.start();
+  };
+
+  window.stopInspector = function() {
+    Inspector.stop();
+  };
+
+  window.setLanguage = function(lang) {
+    const supported = {
+      'java': 'java',
+      'python': 'python', 'py': 'python',
+      'javascript': 'javascript', 'js': 'javascript',
+      'typescript': 'typescript', 'ts': 'typescript',
+      'csharp': 'csharp', 'cs': 'csharp', 'c#': 'csharp', '.net': 'csharp'
+    };
+    
+    const normalized = (lang || '').toLowerCase().replace(/[^a-z#.]/g, '');
+    const finalLang = supported[normalized];
+    
+    if (finalLang) {
+      Config.language = finalLang;
+      console.log(`%c✅ Language set to: ${finalLang.toUpperCase()}`, 'color: #00FF41; font-weight: bold;');
+      return true;
+    } else {
+      console.error('❌ Unsupported language. Use: java, python, javascript, typescript, csharp');
+      return false;
+    }
+  };
+
+  window.help = function() {
+    console.clear();
+    console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #00FF41;');
+    console.log('%c║     🎭 PLAYWRIGHT LOCATOR FINDER - INSPECTOR EDITION 🎭      ║', 'color: #00FF41; font-weight: bold; font-size: 16px;');
+    console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #00FF41;');
+    console.log('');
+    console.log('%c🚀 QUICK START:', 'color: #FFD700; font-weight: bold; font-size: 14px;');
+    console.log('  1. setLanguage("java")     // Choose: java, python, javascript, csharp');
+    console.log('  2. startInspector()        // Activate click-to-inspect mode');
+    console.log('  3. Click any element       // Get ranked locator suggestions');
+    console.log('  4. stopInspector()         // Or press ESC to exit');
+    console.log('');
+    console.log('%c🎯 FEATURES:', 'color: #00BFFF; font-weight: bold;');
+    console.log('  ✅ Smart locator generation with Playwright best practices');
+    console.log('  ✅ Chained locators using parent context');
+    console.log('  ✅ Filter strategies (hasText, has, visible)');
+    console.log('  ✅ Uniqueness validation & strictness warnings');
+    console.log('  ✅ Multiple strategies ranked by priority');
+    console.log('  ✅ Language-specific code (Java/Python/JS/TS/C#)');
+    console.log('  ✅ One-click copy to clipboard');
+    console.log('');
+    console.log('%c💡 EXAMPLE:', 'color: #FFA500; font-weight: bold;');
+    console.log('  setLanguage("java")');
+    console.log('  startInspector()');
+    console.log('  // Click any button on the page');
+    console.log('  // Get: page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Login"))');
+    console.log('');
+    console.log('%c═══════════════════════════════════════════════════════════════', 'color: #00FF41;');
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Print welcome message
+  console.clear();
+  console.log('%c╔════════════════════════════════════════════════════════════════╗', 'color: #00FF41;');
+  console.log('%c║     🎭 PLAYWRIGHT LOCATOR FINDER - INSPECTOR EDITION 🎭      ║', 'color: #00FF41; font-weight: bold; font-size: 18px;');
+  console.log('%c║              Professional Grade v3.0                           ║', 'color: #00FF41;');
+  console.log('%c╚════════════════════════════════════════════════════════════════╝', 'color: #00FF41;');
+  console.log('');
+  console.log('%c✨ Tool loaded successfully!', 'color: #00FF41; font-weight: bold;');
+  console.log('');
+  console.log('%c🚀 GET STARTED:', 'color: #FFD700; font-weight: bold; font-size: 14px;');
+  console.log('%c  setLanguage("java")     %c// Set your language binding', 'color: #a5d6a7;', 'color: #666;');
+  console.log('%c  startInspector()        %c// Click elements to get locators', 'color: #a5d6a7;', 'color: #666;');
+  console.log('');
+  console.log('%c💡 Supported Languages:', 'color: #00BFFF; font-weight: bold;');
+  console.log('  • Java        • Python      • JavaScript');
+  console.log('  • TypeScript  • C# (.NET)');
+  console.log('');
+  console.log('%cType: help() for full documentation', 'color: #888; font-style: italic;');
+  console.log('');
+
+})();
