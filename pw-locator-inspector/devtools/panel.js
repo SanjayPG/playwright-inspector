@@ -607,6 +607,23 @@ function sendMessageToContentScript(message) {
   }, (response) => {
     if (chrome.runtime.lastError) {
       console.error('[DevTools Panel] Error sending message:', chrome.runtime.lastError);
+
+      // Show user-friendly error for connection issues
+      if (chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+        showToast('Please refresh the page and try again', 'error');
+
+        // Reset inspector state if activation failed
+        if (message.action === 'activate' && State.inspectorActive) {
+          State.inspectorActive = false;
+          const btn = document.getElementById('start-inspector');
+          const status = document.getElementById('inspector-status');
+          btn.textContent = 'Start Element Picker';
+          btn.classList.remove('active');
+          status.classList.remove('active');
+          status.classList.add('inactive');
+          status.querySelector('.status-text').textContent = 'Ready';
+        }
+      }
     } else {
       console.log('[DevTools Panel] Message sent successfully, response:', response);
     }

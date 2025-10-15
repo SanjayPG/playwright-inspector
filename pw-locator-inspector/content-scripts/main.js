@@ -1187,11 +1187,18 @@ const Inspector = {
   },
   activate() {
     console.log('[Inspector] Activating inspector mode...');
+
+    // Ensure overlay exists
+    if (!this.overlay || !this.overlay.parentNode) {
+      console.log('[Inspector] Overlay not found or detached, recreating...');
+      this.createOverlay();
+    }
+
     this.isActive = true;
     this.overlay.style.display = 'block';
     document.body.style.cursor = 'crosshair';
     Notifications.show('Inspector Mode Active (ESC to exit)', 'info');
-    console.log('[Inspector] Inspector mode activated. Cursor should be crosshair now.');
+    console.log('[Inspector] Inspector mode activated. isActive:', this.isActive);
   },
   deactivate() {
     this.isActive = false;
@@ -1249,11 +1256,26 @@ const Inspector = {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Content Script] Received message:', message, 'from:', sender);
 
+  // Ensure content script is initialized
+  if (!window.pwlpInitialized) {
+    console.warn('[Content Script] Not yet initialized, deferring message');
+    setTimeout(() => {
+      chrome.runtime.sendMessage(message);
+    }, 100);
+    sendResponse({ success: false, error: 'Content script initializing, please try again' });
+    return true;
+  }
+
   switch (message.action) {
     case 'activate':
       console.log('[Content Script] Activating inspector...');
-      Inspector.activate();
-      sendResponse({ success: true });
+      try {
+        Inspector.activate();
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('[Content Script] Error activating inspector:', error);
+        sendResponse({ success: false, error: error.message });
+      }
       break;
     case 'deactivate':
       console.log('[Content Script] Deactivating inspector...');
@@ -1339,11 +1361,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 (() => {
-  if (window.pwlpInitialized) return;
+  if (window.pwlpInitialized) {
+    console.log('[Content Script] Already initialized');
+    return;
+  }
+
+  console.log('[Content Script] Initializing Playwright Locator Inspector...');
+
   window.pwlpInitialized = true;
   Storage.loadHistory();
   Storage.loadFavorites();
   UIPanel.init();
   Inspector.init();
-  console.log('🎭 Playwright Locator Inspector initialized');
+
+  console.log('🎭 Playwright Locator Inspector initialized successfully');
+  console.log('[Content Script] Inspector object:', Inspector);
+  console.log('[Content Script] Ready to receive messages');
+
+  // Notify background that content script is ready
+  chrome.runtime.sendMessage({ action: 'contentScriptReady' }).catch(() => {
+    // Ignore errors, background might not be listening
+  });
 })();
