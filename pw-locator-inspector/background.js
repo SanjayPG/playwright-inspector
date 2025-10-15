@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Background] Forwarding activate to tab:', targetTabId);
     chrome.tabs.sendMessage(targetTabId, { action: 'activate' }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] Error:', chrome.runtime.lastError.message);
+        console.warn('[Background] Error:', chrome.runtime.lastError.message);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
         console.log('[Background] Activate sent successfully');
@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Background] Forwarding deactivate to tab:', targetTabId);
     chrome.tabs.sendMessage(targetTabId, { action: 'deactivate' }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] Error:', chrome.runtime.lastError.message);
+        console.warn('[Background] Error:', chrome.runtime.lastError.message);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
         console.log('[Background] Deactivate sent successfully');
@@ -87,7 +87,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     chrome.tabs.sendMessage(targetTabId, { action: 'setLanguage', language: request.language }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] Error:', chrome.runtime.lastError.message);
+        console.warn('[Background] Error:', chrome.runtime.lastError.message);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
         sendResponse(response || { success: true });
@@ -106,7 +106,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     chrome.tabs.sendMessage(targetTabId, { action: 'getStatus' }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] Error:', chrome.runtime.lastError.message);
+        console.warn('[Background] Error:', chrome.runtime.lastError.message);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
         sendResponse(response || { success: true });
@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       language: request.language
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] Error:', chrome.runtime.lastError.message);
+        console.warn('[Background] Error:', chrome.runtime.lastError.message);
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
         sendResponse(response || { success: false, error: 'No response' });
@@ -151,8 +151,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Context menu click handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'pw-inspector-generate') {
-    chrome.tabs.sendMessage(tab.id, { action: 'startGenerate' });
+    chrome.tabs.sendMessage(tab.id, { action: 'startGenerate' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Background] Cannot send message to tab:', chrome.runtime.lastError.message);
+      }
+    });
   } else if (info.menuItemId === 'pw-inspector-validate') {
-    chrome.tabs.sendMessage(tab.id, { action: 'startValidate' });
+    chrome.tabs.sendMessage(tab.id, { action: 'startValidate' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Background] Cannot send message to tab:', chrome.runtime.lastError.message);
+      }
+    });
   }
 });
