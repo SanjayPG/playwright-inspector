@@ -542,10 +542,16 @@ const Validator = {
     }
   },
   detectLanguage(code) {
+    // Check for Java-specific patterns first (more specific checks before general ones)
+    if (code.includes('new Page.GetByRoleOptions()')) return 'java';
+    if (code.includes('AriaRole.') && code.includes('page.getByRole')) return 'java';
+    // Check for C# patterns (PascalCase methods and C# syntax)
     if (code.includes('GetByRole') || code.includes('GetByLabel') || code.includes('GetByText')) return 'csharp';
-    if (code.includes('AriaRole.') || code.includes('new Page.')) return 'java';
+    // Check for Python patterns
     if (code.includes('get_by_')) return 'python';
-    if (code.includes('getBy') || code.includes('{')) return 'javascript';
+    // Check for JavaScript/TypeScript patterns (camelCase methods)
+    if (code.includes('getByRole') || code.includes('getByLabel') || code.includes('getByText') || code.includes('getByPlaceholder')) return 'javascript';
+    // Fallback to Java
     return 'java';
   },
   parseJava(code) {
